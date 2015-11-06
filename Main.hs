@@ -27,20 +27,23 @@ evalExpr env (AssignExpr OpAssign (LVar var) expr) = do
             e <- evalExpr env expr
             setVar var e
 
-{-                                           CALL EXPR                                      -}
+{- 
+{-}                                          CALL EXPR                                      -}
 evalExpr env (CallExpr funcName funcParam) = do
     v <- stateLookup env funcName
     case v of
         (Error _) -> return $ Error $ (show var) ++ " not defined"
-        (VarFunc funcName funcParam funcBody) -> do
-            envP <- 
+        (VarFunc funcName' funcParam' funcBody) -> do
+            envP <- union env
 
 evalParam :: StateT -> [String] -> [Expression] -> StateTransformer Value
 evalParam env (paramName:xs) (paramExpr:ys) = do
     v <- setVar paramName (evalExpr paramExpr)
     evalParam v xs ys
-evalParam env [] _ = ST (env -> (, env))
+evalParam env [] _ = ST (env -> ((), env))
 
+
+-}
 
 
 
@@ -50,6 +53,9 @@ evalStmt env (VarDeclStmt []) = return Nil
 evalStmt env (VarDeclStmt (decl:ds)) =
     varDecl env decl >> evalStmt env (VarDeclStmt ds)
 evalStmt env (ExprStmt expr) = evalExpr env expr
+evalStmt env (FunctionStmt name {-Id-} args {-[Id]-} body {-[Statement]-}) = return $ VarFunc name args body
+evalStmt env (BlockStmt []) = return Nil
+evalStmt env (BlockStmt (x:xs)) = evalStmt env x >> evaluate env xs
 --Começa aqui o IfSingleStmt
 evalStmt env (IfSingleStmt expr stmt) = do
     ret <- evalExpr env expr
@@ -62,28 +68,43 @@ evalStmt env (IfStmt expr stmt1 stmt2) = do
     ret <- evalExpr env expr
     case ret of
         (Bool b) -> if b then evalStmt env stmt1 else evalStmt env stmt2
+------------------------------------------------------ FOR STMT ------------------------------------------------------
+evalStmt env (ForStmt init test increment body) = do
+    varDeclFor env init
+    ret <- evalExpr env test
+    case ret of
+        (Bool b) -> if b then evalStmt env body else return Nil
+    evalExpr env increment
 
 
-{-}
 
---COmeça aqui o forStmt
-evalStmt env (ForStmt iniVar testExpr increExpr stmt) = 
 
-    do
-    condVal <- evalExpr env testExpr
-    case condVal of
-        (Bool b) -> if b then
-            do
-                evalStmt env stmt
-                evalExpr env increExpr
-                newIniVar <-
-                evalStmt env (ForStmt)
+varDeclFor :: StateT -> ForInit -> StateTransformer Value
+varDeclFor env forinitdecl = do
+    case forinitdecl of
+        (NoInit) -> return Nil
+        (VarInit (varDeclInit:xs)) -> varDecl env varDeclInit >> varDeclFor env (VarInit xs)
+        (ExprInit exprInit) -> evalExpr env exprInit
+
+
+{-
+orStmt ForInit                                                      data VarDecl = VarDecl Id (Maybe Expression) 
+            (Maybe Expression) -- test
+            (Maybe Expression) -- increment
+            Statement          -- body 
+    -- ^ @ForStmt a init test increment body@, @for (init; test,
+-}
+{-
+
+-- | for initializer, spec 12.6
+data ForInit = NoInit -- ^ empty
+               | VarInit [VarDecl] -- ^ @var x, y=42@
+               | ExprInit Expression -- ^ @expr@
+  deriving (Show,Data,Typeable,Eq,Ord)
 
 -}
 
-evalStmt env (FunctionStmt name {-Id-} args {-[Id]-} body {-[Statement]-}) = return $ VarFunc name args body
-evalStmt env (BlockStmt []) = return Nil
-evalStmt env (BlockStmt (x:xs)) = evalStmt env x >> evaluate env xs
+
 
 
 -- Do not touch this one :)
@@ -146,7 +167,7 @@ varDecl env (VarDecl (Id id) maybeExpr) = do
             val <- evalExpr env expr
             setVar id val
 
-setVar :: String -> Value -> StateTransformer Value
+setVar :: String -> Value -> StateTransformer Value -- Só para ambientes globais, se já existir ele substitui!!!!
 setVar var val = ST $ \s -> (val, insert var val s)
 
 --
